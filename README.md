@@ -17,7 +17,18 @@ Captures EffCSS-generated CSS via **Vite SSR pipeline** and inlines it into HTML
 
 - **Node.js** >= 18.0.0
 - **Vite** ^5.0.0 || ^6.0.0
-- **effcss** ^5.4.0 (⚠️ must be installed separately)
+- **effcss** ^6.0.0 (⚠️ must be installed separately)
+
+> **ESM-only** — this plugin (like EffCSS v6) ships ESM only. Use `import` (or a bundler that handles ESM). `require()` is not supported.
+
+## Version compatibility
+
+| Plugin version | effcss version | Notes |
+|----------------|----------------|-------|
+| `v2.x` | `^6.0.0` | Current. Uses `serialize()` + `getContexts()` / `ctx.serialize()` |
+| `v1.x` | `^5.4.0` | Legacy. Uses `serialize()` + `serializeMeta()` |
+
+> **Upgrading from v1.x to v2.x?** effcss v6 changed API. The plugin now captures both the global context and all isolated contexts. If you rely on the old serialization behaviour, stay on `vite-plugin-effcss@1` with `effcss@^5.4.0`.
 
 ## Installation
 
@@ -63,8 +74,6 @@ All options are optional.
 | `entry` | `string` | — | Explicit entry point (e.g. `/src/main.tsx`). Auto-detected from `<script type="module" src="...">` in `index.html` if omitted |
 | `placeholder` | `string` | `'<!-- EFFCSS_INJECT -->'` | HTML placeholder to replace with `<style>` |
 | `injectTo` | `'head' \| 'head-prepend' \| 'body'` | `'head'` | Fallback injection position if placeholder not found |
-| `injectMeta` | `boolean` | `true` | Inject `serializeMeta()` as `<script>` with JSON metadata |
-
 
 ## License
 

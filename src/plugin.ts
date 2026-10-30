@@ -12,7 +12,7 @@
  */
 import type { Plugin, PluginOption, ResolvedConfig, ViteDevServer, IndexHtmlTransformContext, IndexHtmlTransformResult } from 'vite';
 import { createServer } from 'vite';
-import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { Buffer } from 'node:buffer';
 import type { EffcssPluginOptions } from './types.js';
@@ -51,14 +51,11 @@ function buildCaptureSource(entryPoint: string): string {
     `// effcss-vite-plugin: capture module`,
     `const __effcss = await import('effcss');`,
     `const __serialize = __effcss.serialize || __effcss.default?.serialize;`,
-    `const __serializeMeta = __effcss.serializeMeta || __effcss.default?.serializeMeta;`,
-    ``,
-    `// Import entry point — all effcss .ts imports execute, registering styles`,
-    `// createRoot().render() throws in SSR (no DOM) — caught here`,
+    `const __getContexts = __effcss.getContexts || __effcss.default?.getContexts;`,
     `try { await import(${JSON.stringify(entryPoint)}); } catch(__e) { /* expected: no DOM */ }`,
     ``,
     `export const css = typeof __serialize === 'function' ? __serialize() : '';`,
-    `export const meta = typeof __serializeMeta === 'function' ? __serializeMeta() : '';`,
+    `export const ctxCss = typeof __getContexts === 'function' ? Object.values(__getContexts()).map((ctx) => ctx.serialize()).join('') : '';`,
   ].join('\n');
 }
 
@@ -74,9 +71,11 @@ async function captureViaDev(
   server: ViteDevServer,
   root: string,
   verbose: boolean,
-): Promise<{ css: string; meta: string }> {
+): Promise<{ css: string; ctxCss: string }> {
   const source = buildCaptureSource(entryPoint);
-  const tmpDir = mkdtempSync(join(root, 'node_modules', '.effcss-capture-'));
+  const nodeModulesDir = join(root, 'node_modules');
+  if (!existsSync(nodeModulesDir)) mkdirSync(nodeModulesDir, { recursive: true });
+  const tmpDir = mkdtempSync(join(nodeModulesDir, '.effcss-capture-'));
   const tmpFile = join(tmpDir, 'capture.ts');
 
   try {
@@ -85,7 +84,7 @@ async function captureViaDev(
     const mod = (await server.ssrLoadModule(tmpFile)) as Record<string, unknown>;
     return {
       css: (mod.css as string) || '',
-      meta: (mod.meta as string) || '',
+      ctxCss: (mod.ctxCss as string) || '',
     };
   } finally {
     try { rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
@@ -107,7 +106,7 @@ async function captureViaBuild(
   entryPoint: string,
   userPlugins: Plugin[],
   verbose: boolean,
-): Promise<{ css: string; meta: string }> {
+): Promise<{ css: string; ctxCss: string }> {
   if (verbose) console.log('[effcss] Creating temporary Vite SSR server for capture...');
 
   const tempServer = await createServer({
@@ -141,7 +140,7 @@ async function captureViaBuild(
     const mod = (await tempServer.ssrLoadModule(CAPTURE_MODULE_ID)) as Record<string, unknown>;
     return {
       css: (mod.css as string) || '',
-      meta: (mod.meta as string) || '',
+      ctxCss: (mod.ctxCss as string) || '',
     };
   } finally {
     await tempServer.close();
@@ -161,14 +160,13 @@ export function effcssPlugin(options: EffcssPluginOptions = {}): PluginOption {
     verbose = DEFAULTS.verbose,
     placeholder = DEFAULTS.placeholder,
     injectTo = DEFAULTS.injectTo,
-    injectMeta = DEFAULTS.injectMeta,
     entry: explicitEntry,
   } = options;
 
   let config: ResolvedConfig;
   let server: ViteDevServer | undefined;
   let capturedCss = '';
-  let capturedMeta = '';
+  let capturedCtxCss = '';
   let captureError: string | null = null;
 
   return {
@@ -185,7 +183,7 @@ export function effcssPlugin(options: EffcssPluginOptions = {}): PluginOption {
 
     async buildStart() {
       capturedCss = '';
-      capturedMeta = '';
+      capturedCtxCss = '';
       captureError = null;
 
       try {
@@ -205,13 +203,13 @@ export function effcssPlugin(options: EffcssPluginOptions = {}): PluginOption {
         }
 
         let css: string;
-        let meta: string;
+        let ctxCss: string;
 
         if (server) {
           // ── Dev mode: use existing ViteDevServer ─────────────────────
           const result = await captureViaDev(entryPoint, server, config.root, verbose);
           css = result.css;
-          meta = result.meta;
+          ctxCss = result.ctxCss;
         } else {
           // ── Build mode: create temporary ViteDevServer ──────────────
           const result = await captureViaBuild(
@@ -221,11 +219,11 @@ export function effcssPlugin(options: EffcssPluginOptions = {}): PluginOption {
             verbose,
           );
           css = result.css;
-          meta = result.meta;
+          ctxCss = result.ctxCss;
         }
 
         capturedCss = css;
-        capturedMeta = injectMeta ? meta : '';
+        capturedCtxCss = ctxCss;
 
         if (verbose) {
           const size = Buffer.byteLength(capturedCss, 'utf-8');
@@ -246,7 +244,7 @@ export function effcssPlugin(options: EffcssPluginOptions = {}): PluginOption {
 
       const injectParts: string[] = [];
       if (capturedCss) injectParts.push(capturedCss);
-      if (capturedMeta) injectParts.push(capturedMeta);
+      if (capturedCtxCss) injectParts.push(capturedCtxCss);
       const injectContent = injectParts.join('\n');
 
       if (!injectContent) return html;
@@ -262,9 +260,6 @@ export function effcssPlugin(options: EffcssPluginOptions = {}): PluginOption {
         case 'head-prepend':
           if (verbose) console.log('[effcss] Injecting into <head> (prepend).');
           return html.replace('<head>', `<head>\n${injectContent}`);
-        case 'body':
-          if (verbose) console.log('[effcss] Injecting before </body>.');
-          return html.replace('</body>', `${injectContent}\n</body>`);
         case 'head':
         default:
           if (verbose) console.log('[effcss] Injecting before </head>.');

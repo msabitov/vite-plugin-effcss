@@ -1,16 +1,16 @@
 {
   "name": "vite-plugin-effcss",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Vite plugin for EffCSS — captures CSS via Vite SSR pipeline, injects into HTML",
   "type": "module",
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -42,18 +42,17 @@
     "url": "https://github.com/msabitov/vite-plugin-effcss/issues"
   },
   "peerDependencies": {
-    "vite": "^5.0.0 || ^6.0.0",
-    "effcss": "^5.4.0"
+    "effcss": "^6.0.0",
+    "vite": "^5.0.0 || ^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
-    "effcss": "^5.4.0",
+    "effcss": "^6.0.0",
     "tsup": "^8.5.1",
     "typescript": "~5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.4.5"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean --external vite --external effcss",
-    "prepublishOnly": "npm run build"
+    "build": "tsup src/index.ts --format esm --dts --clean --external vite --external effcss"
   }
 }
